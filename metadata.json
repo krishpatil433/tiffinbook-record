@@ -1,0 +1,8 @@
+{
+  "name": "Tiffinbook - Tiffin Record & Billing Management",
+  "description": "Comprehensive tiffin and meal subscription record management system with daily attendance, customer billing, WhatsApp invoice sharing, and payment tracking for tiffin services.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
