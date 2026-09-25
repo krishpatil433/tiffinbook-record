@@ -19,7 +19,10 @@ import {
   Receipt,
   Sparkles,
   CalendarCheck,
-  Trash2
+  Trash2,
+  Database,
+  Download,
+  ShieldCheck
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -28,6 +31,7 @@ interface DashboardProps {
   onOpenPaymentModal: (customer: Customer) => void;
   onSelectCustomer: (customerId: string) => void;
   onOpenBatchRegister: () => void;
+  onOpenBackup?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -36,6 +40,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenPaymentModal,
   onSelectCustomer,
   onOpenBatchRegister,
+  onOpenBackup,
 }) => {
   const {
     customers,
@@ -144,6 +149,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-[11px] text-slate-500 mt-0.5">All-time received payments</p>
           </div>
         </div>
+      </div>
+
+      {/* Customer Data Safety & Quick Backup Card */}
+      <div className="bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-transparent dark:from-emerald-950/40 dark:via-blue-950/20 dark:to-slate-900 border border-emerald-500/20 dark:border-emerald-500/30 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-start sm:items-center space-x-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5 sm:mt-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                Customer Data Safe &amp; Stored Locally
+              </h3>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                {customers.length} Accounts Active
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400">
+              All meals, dues, and payment histories are safely stored in your browser. Download a backup copy anytime with 1 click.
+            </p>
+          </div>
+        </div>
+
+        {onOpenBackup && (
+          <div className="flex items-center space-x-2 w-full sm:w-auto">
+            <button
+              onClick={onOpenBackup}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-1.5 px-3.5 py-2 text-xs font-bold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition active:scale-95 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Backup Customer Data</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Action Bar: Search, Filters, Quick Daily Attendance Callout */}

@@ -11,19 +11,22 @@ import {
   Moon, 
   PlusCircle,
   PhoneCall,
-  UserPlus
+  UserPlus,
+  Database
 } from 'lucide-react';
 
 interface NavbarProps {
   onOpenAddCustomer: () => void;
   onOpenQuickAddTiffin: () => void;
   onOpenSettings: () => void;
+  onOpenBackup: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddCustomer,
   onOpenQuickAddTiffin,
   onOpenSettings,
+  onOpenBackup,
 }) => {
   const { activeTab, setActiveTab, settings, darkMode, setDarkMode, totalDueOverall } = useTiffin();
 
@@ -83,6 +86,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>+ Customer</span>
+            </button>
+
+            {/* Backup & Save Data Button */}
+            <button
+              onClick={onOpenBackup}
+              title="Backup Customer Data"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg text-emerald-300 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-600/40 transition active:scale-95"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden xs:inline sm:inline">Backup</span>
             </button>
 
             {/* Dark Mode Toggle */}
@@ -161,6 +174,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>Invoice Generator</span>
+            </button>
+
+            {/* Backup & Save Button in tab row */}
+            <button
+              onClick={onOpenBackup}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition whitespace-nowrap text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 border border-emerald-600/30"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Backup Data</span>
             </button>
           </nav>
         </div>

@@ -10,6 +10,7 @@ import { AddCustomerModal } from './components/AddCustomerModal';
 import { AddTiffinModal } from './components/AddTiffinModal';
 import { RecordPaymentModal } from './components/RecordPaymentModal';
 import { SettingsModal } from './components/SettingsModal';
+import { BackupModal } from './components/BackupModal';
 import { Customer, TiffinBill } from './types';
 
 const MainLayout: React.FC = () => {
@@ -33,6 +34,7 @@ const MainLayout: React.FC = () => {
   const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBackupOpen, setIsBackupOpen] = useState(false);
 
   // Handlers
   const handleOpenAddCustomer = () => {
@@ -82,6 +84,7 @@ const MainLayout: React.FC = () => {
         onOpenAddCustomer={handleOpenAddCustomer}
         onOpenQuickAddTiffin={() => handleOpenAddTiffin(null)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenBackup={() => setIsBackupOpen(true)}
       />
 
       {/* Main Content View Switcher */}
@@ -93,6 +96,7 @@ const MainLayout: React.FC = () => {
             onOpenPaymentModal={handleOpenPayment}
             onSelectCustomer={handleSelectCustomer}
             onOpenBatchRegister={() => setActiveTab('daily_register')}
+            onOpenBackup={() => setIsBackupOpen(true)}
           />
         )}
 
@@ -157,6 +161,11 @@ const MainLayout: React.FC = () => {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <BackupModal
+        isOpen={isBackupOpen}
+        onClose={() => setIsBackupOpen(false)}
       />
     </div>
   );
