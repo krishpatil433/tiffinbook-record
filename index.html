@@ -2,12 +2,75 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Tiffinbook - Tiffin Record & Billing Management</title>
     <meta name="description" content="Manage daily tiffins, attendance, monthly bills, WhatsApp invoices, and customer dues easily." />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script>
+      (function() {
+        function removeOutdatedOverlay() {
+          try {
+            const rootEl = document.getElementById('root');
+            // Check direct body children outside #root
+            if (document.body) {
+              const children = Array.from(document.body.children);
+              for (let i = 0; i < children.length; i++) {
+                const child = children[i];
+                if (child === rootEl || child.tagName === 'SCRIPT' || child.tagName === 'LINK') continue;
+                const text = child.innerText || child.textContent || '';
+                if (
+                  text.includes('App is outdated') ||
+                  text.includes('needs to be upgraded by the owner') ||
+                  text.includes('upgraded by the owner')
+                ) {
+                  child.style.setProperty('display', 'none', 'important');
+                  child.style.setProperty('visibility', 'hidden', 'important');
+                  child.style.setProperty('opacity', '0', 'important');
+                  child.style.setProperty('pointer-events', 'none', 'important');
+                  child.style.setProperty('z-index', '-999999', 'important');
+                  if (child.parentNode) child.parentNode.removeChild(child);
+                }
+              }
+            }
+
+            // Check any dialogs/divs outside #root
+            const elements = document.querySelectorAll('dialog, [role="dialog"], [role="alertdialog"], div.fixed, div.absolute');
+            for (let j = 0; j < elements.length; j++) {
+              const el = elements[j];
+              if (rootEl && (el === rootEl || rootEl.contains(el))) continue;
+              const text = el.innerText || el.textContent || '';
+              if (
+                text.includes('App is outdated') ||
+                text.includes('needs to be upgraded by the owner')
+              ) {
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('opacity', '0', 'important');
+                el.style.setProperty('pointer-events', 'none', 'important');
+                if (el.parentNode) el.parentNode.removeChild(el);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Run on events and interval
+        window.addEventListener('DOMContentLoaded', removeOutdatedOverlay);
+        window.addEventListener('load', removeOutdatedOverlay);
+        if (window.MutationObserver) {
+          const obs = new MutationObserver(removeOutdatedOverlay);
+          obs.observe(document.documentElement, { childList: true, subtree: true });
+        }
+        setInterval(removeOutdatedOverlay, 150);
+      })();
+    </script>
   </head>
   <body style="font-family: 'Plus Jakarta Sans', sans-serif;">
     <div id="root"></div>
