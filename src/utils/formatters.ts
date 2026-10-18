@@ -152,10 +152,16 @@ export const generateWhatsAppBillText = (
   }
 
   if (upiId) {
-    message += `💳 *Scan / Pay via UPI:* \`${upiId}\`\n`;
+    message += `💳 *UPI ID:* \`${upiId}\`\n`;
+    const cleanPayee = encodeURIComponent(bizName || 'Krish Tiffin Service');
+    message += `📲 *Pay with UPI App (GPay/PhonePe/Paytm):*\nupi://pay?pa=${upiId}&pn=${cleanPayee}&am=${grandTotal}&cu=INR&tn=${encodeURIComponent(`Tiffin bill - ${customer.name}`)}\n`;
   }
   message += `📞 *Contact / Support:* ${bizPhone}${settings.secondaryPhone ? ` / ${settings.secondaryPhone}` : ''}\n`;
-  message += `\n🙏 _${settings.invoiceNote || 'Thank you for your business!'}_`;
+  if (settings.invoiceNote) {
+    message += `\n🙏 _${settings.invoiceNote}_`;
+  } else {
+    message += `\n🙏 _Thank you for your business!_`;
+  }
 
   return message;
 };

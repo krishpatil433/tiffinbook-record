@@ -157,17 +157,13 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
     invoiceDate: getTodayString(),
     billingPeriod: selectedMonth === 'all' ? 'All Records' : `${selectedMonth}`,
     businessName: settings.businessName || 'KRISH TIFFIN SERVICE',
-    businessTagline: settings.tagline || 'Pure, Fresh & Hygienic Home Meals',
     businessPhone: settings.primaryPhone || '7798719246',
     businessPhoneSecondary: settings.secondaryPhone || '',
-    businessAddress: settings.address || 'Shop No. 4, Shree Krishna Residency, Near Model College',
     customerName: customer?.name || '',
     customerPhone: customer?.number || '',
     customerAddress: customer?.address || '',
     rows: [] as InvoiceRowItem[],
     lastMonthPending: 0,
-    notes: settings.invoiceNote || 'Thank you for your business! Please clear monthly dues by the 5th.',
-    terms: '1. Food once delivered is non-returnable. 2. Please notify delivery pauses 12 hours in advance.',
     signatoryName: settings.ownerName || 'Authorized Signatory',
   });
 
@@ -190,17 +186,13 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
       invoiceDate: getTodayString(),
       billingPeriod: selectedMonth === 'all' ? 'All Time Billing' : `${selectedMonth}`,
       businessName: settings.businessName || 'KRISH TIFFIN SERVICE',
-      businessTagline: settings.tagline || 'Pure, Fresh & Hygienic Home Meals',
       businessPhone: settings.primaryPhone || '7798719246',
       businessPhoneSecondary: settings.secondaryPhone || '',
-      businessAddress: settings.address || 'Shop No. 4, Shree Krishna Residency, Near Model College',
       customerName: customer.name,
       customerPhone: customer.number,
       customerAddress: customer.address || '',
       rows: initialRows,
       lastMonthPending: autoLastMonthPending,
-      notes: settings.invoiceNote || 'Thank you for your business! Please clear monthly dues by the 5th.',
-      terms: '1. Food once delivered is non-returnable. 2. Please notify delivery pauses 12 hours in advance.',
       signatoryName: settings.ownerName || settings.businessName,
     });
 
@@ -554,8 +546,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
           </span>
         </div>
 
-        {/* Invoice Header: Company Branding (Fully Editable) */}
-        <div className="text-center mb-8 space-y-1">
+        {/* Invoice Header: Company Branding */}
+        <div className="text-center mb-8 space-y-2">
           <div>
             <input
               type="text"
@@ -563,16 +555,6 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
               onChange={e => setInvoiceData({ ...invoiceData, businessName: e.target.value })}
               placeholder="ENTER BUSINESS NAME"
               className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight text-center w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none px-2 py-1"
-            />
-          </div>
-
-          <div>
-            <input
-              type="text"
-              value={invoiceData.businessTagline}
-              onChange={e => setInvoiceData({ ...invoiceData, businessTagline: e.target.value })}
-              placeholder="Business Tagline / Subtitle"
-              className="text-xs text-slate-500 dark:text-slate-400 text-center w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none px-1"
             />
           </div>
 
@@ -598,17 +580,6 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                 />
               </div>
             )}
-          </div>
-
-          {/* Full Company Address */}
-          <div className="pt-1 max-w-xl mx-auto">
-            <input
-              type="text"
-              value={invoiceData.businessAddress}
-              onChange={e => setInvoiceData({ ...invoiceData, businessAddress: e.target.value })}
-              placeholder="Full Business / Kitchen Address"
-              className="text-[11px] text-slate-500 dark:text-slate-400 text-center w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none"
-            />
           </div>
         </div>
 
@@ -830,8 +801,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              {/* QR Image Canvas / Preview */}
-              <div className="bg-white p-2 rounded-lg border border-slate-300 dark:border-slate-600 shadow-sm shrink-0 flex flex-col items-center">
+              {/* QR Image Canvas / Preview with Direct UPI Pay Link */}
+              <div className="bg-white p-2.5 rounded-xl border border-slate-300 dark:border-slate-600 shadow-sm shrink-0 flex flex-col items-center w-full sm:w-36">
                 {qrDataUrl ? (
                   <img
                     src={qrDataUrl}
@@ -843,9 +814,22 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                     Generating QR...
                   </div>
                 )}
-                <span className="text-[9px] font-bold text-slate-500 uppercase mt-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase mt-1 text-center">
                   Scan with any UPI app
                 </span>
+
+                {/* Direct UPI Payment App Redirect Link */}
+                <a
+                  href={upiPayUri}
+                  className="w-full mt-2 py-1.5 px-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1 shadow-sm transition text-center no-underline"
+                  title="Click to open Google Pay, PhonePe, Paytm, or BHIM"
+                >
+                  <IndianRupee className="w-3 h-3 flex-shrink-0" />
+                  <span>Pay via UPI App</span>
+                </a>
+                <p className="text-[8px] text-slate-500 text-center mt-0.5 leading-tight">
+                  GPay • PhonePe • Paytm
+                </p>
               </div>
 
               {/* QR Editable Inputs */}
@@ -911,6 +895,14 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
 
                 {/* QR Actions */}
                 <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <a
+                    href={upiPayUri}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold flex items-center space-x-1 transition shadow-xs"
+                  >
+                    <IndianRupee className="w-3 h-3" />
+                    <span>Pay with UPI App</span>
+                  </a>
+
                   <button
                     type="button"
                     onClick={handleDownloadQrImage}
@@ -1003,38 +995,15 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
           </div>
         </div>
 
-        {/* Footer Notes & Authorized Signatory (Editable) */}
-        <div className="mt-10 pt-6 border-t border-dashed border-slate-300 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-3 gap-6 items-end">
-          {/* Notes & Instructions */}
-          <div className="sm:col-span-2 space-y-2">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase">
-                Invoice Note / Payment Instructions:
-              </label>
-              <textarea
-                rows={2}
-                value={invoiceData.notes}
-                onChange={e => setInvoiceData({ ...invoiceData, notes: e.target.value })}
-                className="w-full bg-transparent text-xs text-slate-600 dark:text-slate-400 italic focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-blue-500 resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[9px] font-bold text-slate-400 uppercase">
-                Terms & Conditions:
-              </label>
-              <input
-                type="text"
-                value={invoiceData.terms}
-                onChange={e => setInvoiceData({ ...invoiceData, terms: e.target.value })}
-                className="w-full bg-transparent text-[10px] text-slate-400 focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-blue-500"
-              />
-            </div>
+        {/* Footer & Authorized Signatory */}
+        <div className="mt-8 pt-6 border-t border-dashed border-slate-300 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium italic">
+            Thank you for your business!
           </div>
 
           {/* Authorized Signatory */}
-          <div className="text-center sm:text-right space-y-6">
-            <div className="h-8 flex items-end justify-center sm:justify-end">
+          <div className="text-center sm:text-right space-y-4 w-full sm:w-60">
+            <div className="h-6 flex items-end justify-center sm:justify-end">
               <span className="font-serif italic text-sm text-slate-700 dark:text-slate-300">
                 {invoiceData.businessName}
               </span>

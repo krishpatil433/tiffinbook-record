@@ -2,14 +2,14 @@ import { Customer, TiffinBill, Payment, BusinessSettings } from '../types';
 
 export const defaultSettings: BusinessSettings = {
   businessName: 'KRISH TIFFIN SERVICE',
-  tagline: 'Ghar Jaisa Swad • Pure, Fresh & Hygienic Home Meals',
+  tagline: '',
   primaryPhone: '7798719246',
   secondaryPhone: '9322344302',
-  address: 'Shop No. 4, Shree Krishna Residency, Near Model College',
+  address: '',
   upiId: '7798719246@upi',
   defaultPrice: 70,
   currencySymbol: '₹',
-  invoiceNote: 'Thank you for choosing Krish Tiffin Service! Please clear all pending monthly dues by 5th of each month.',
+  invoiceNote: '',
   ownerName: 'Krish Patil',
 };
 
