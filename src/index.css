@@ -33,6 +33,11 @@
 
 /* Print Optimization Stylesheet for Invoices */
 @media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   body {
     background: white !important;
     color: black !important;
@@ -47,6 +52,15 @@
   .fixed,
   footer {
     display: none !important;
+  }
+
+  .upi-pay-btn {
+    display: flex !important;
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   #printable-invoice {

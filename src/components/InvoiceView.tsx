@@ -821,7 +821,13 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                 {/* Direct UPI Payment App Redirect Link */}
                 <a
                   href={upiPayUri}
-                  className="w-full mt-2 py-1.5 px-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1 shadow-sm transition text-center no-underline"
+                  className="upi-pay-btn w-full mt-2 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1 shadow-md shadow-blue-600/25 transition text-center no-underline print:!bg-blue-600 print:!text-white"
+                  style={{
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    WebkitPrintColorAdjust: 'exact',
+                    printColorAdjust: 'exact',
+                  }}
                   title="Click to open Google Pay, PhonePe, Paytm, or BHIM"
                 >
                   <IndianRupee className="w-3 h-3 flex-shrink-0" />
@@ -897,7 +903,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                 <div className="pt-1 flex flex-wrap items-center gap-2">
                   <a
                     href={upiPayUri}
-                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold flex items-center space-x-1 transition shadow-xs"
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold flex items-center space-x-1 transition shadow-xs"
                   >
                     <IndianRupee className="w-3 h-3" />
                     <span>Pay with UPI App</span>
