@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
+import html2canvas from 'html2canvas';
 import { Customer, TiffinBill } from '../types';
 import { useTiffin } from '../context/TiffinContext';
+import { UpiPaymentModal } from './UpiPaymentModal';
 import { 
   formatCurrency, 
   formatDate, 
@@ -34,7 +36,10 @@ import {
   FileSpreadsheet,
   HelpCircle,
   Eye,
-  Settings2
+  Settings2,
+  Image as ImageIcon,
+  ExternalLink,
+  Smartphone
 } from 'lucide-react';
 
 interface InvoiceViewProps {
@@ -66,6 +71,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [qrCopied, setQrCopied] = useState<boolean>(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
+  const [isExportingImage, setIsExportingImage] = useState<boolean>(false);
+  const [payLinkCopied, setPayLinkCopied] = useState<boolean>(false);
 
   const customer = customers.find(c => c.id === selectedCustId);
 
@@ -227,6 +235,63 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
     const noteStr = encodeURIComponent(qrNote.trim());
     return `upi://pay?pa=${cleanUpi}&pn=${cleanPayee}${amtStr}&cu=INR&tn=${noteStr}`;
   }, [qrUpiId, qrPayeeName, effectiveQrAmount, qrNote]);
+
+  // Universal Web Payment Link (Clickable and works in PDFs, web browsers, WhatsApp, etc.)
+  const webPayUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    const cleanUpi = qrUpiId.trim();
+    const cleanPayee = encodeURIComponent(qrPayeeName.trim());
+    const amtStr = effectiveQrAmount > 0 ? effectiveQrAmount.toFixed(2) : '';
+    const noteStr = encodeURIComponent(qrNote.trim());
+    return `${window.location.origin}${window.location.pathname}?pay=1&pa=${encodeURIComponent(cleanUpi)}&pn=${cleanPayee}&am=${amtStr}&tn=${noteStr}`;
+  }, [qrUpiId, qrPayeeName, effectiveQrAmount, qrNote]);
+
+  const handlePayViaUpi = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // On mobile devices, attempt to trigger native UPI app chooser
+    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = upiPayUri;
+    }
+    // Always open the rich interactive Payment Modal
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleCopyPayLink = () => {
+    if (!webPayUrl) return;
+    navigator.clipboard.writeText(webPayUrl);
+    setPayLinkCopied(true);
+    setTimeout(() => setPayLinkCopied(false), 2000);
+  };
+
+  const handleDownloadJPG = async () => {
+    const invoiceElement = document.getElementById('printable-invoice');
+    if (!invoiceElement) return;
+    setIsExportingImage(true);
+    try {
+      const canvas = await html2canvas(invoiceElement, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const link = document.createElement('a');
+      const custName = (invoiceData.customerName || 'Customer').replace(/\s+/g, '_');
+      link.download = `Invoice_${(invoiceData.invoiceNumber || 'INV').replace(/\s+/g, '_')}_${custName}.jpg`;
+      link.href = imgData;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error generating JPG invoice:', err);
+    } finally {
+      setIsExportingImage(false);
+    }
+  };
 
   useEffect(() => {
     if (!upiPayUri) return;
@@ -459,19 +524,38 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
             <button
               onClick={handlePrint}
               className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold hover:bg-slate-800 flex items-center space-x-1.5 transition shadow-sm"
-              title="Print / Save PDF"
+              title="Print or Save invoice as PDF (with clickable UPI payment link)"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Print PDF</span>
             </button>
 
             <button
+              onClick={handleDownloadJPG}
+              disabled={isExportingImage}
+              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow-sm"
+              title="Download full invoice as high-resolution JPG image"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>{isExportingImage ? 'Generating JPG...' : 'Download JPG'}</span>
+            </button>
+
+            <button
               onClick={handleShareWhatsApp}
               className="px-3.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow-sm"
-              title="Share Customized Bill on WhatsApp"
+              title="Share Customized Bill on WhatsApp with direct UPI payment link"
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>WhatsApp</span>
+            </button>
+
+            <button
+              onClick={handleCopyPayLink}
+              className="px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-xs font-semibold flex items-center space-x-1 transition"
+              title="Copy direct online UPI payment link for customer"
+            >
+              {payLinkCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <ExternalLink className="w-3.5 h-3.5 text-blue-500" />}
+              <span>{payLinkCopied ? 'Link Copied!' : 'Copy Pay Link'}</span>
             </button>
 
             <button
@@ -820,8 +904,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
 
                 {/* Direct UPI Payment App Redirect Link */}
                 <a
-                  href={upiPayUri}
-                  className="upi-pay-btn w-full mt-2 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1 shadow-md shadow-blue-600/25 transition text-center no-underline print:!bg-blue-600 print:!text-white"
+                  href={webPayUrl || upiPayUri}
+                  onClick={handlePayViaUpi}
+                  className="upi-pay-btn w-full mt-2 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-[11px] font-bold flex items-center justify-center space-x-1 shadow-md shadow-blue-600/25 transition text-center no-underline cursor-pointer print:!bg-blue-600 print:!text-white"
                   style={{
                     backgroundColor: '#2563eb',
                     color: '#ffffff',
@@ -836,6 +921,16 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                 <p className="text-[8px] text-slate-500 text-center mt-0.5 leading-tight">
                   GPay • PhonePe • Paytm
                 </p>
+
+                {/* Clear UPI details & note for JPG, Paper & PDF Viewers */}
+                <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 text-center w-full">
+                  <p className="text-[9px] font-mono font-bold text-slate-800 dark:text-slate-200">
+                    UPI ID: <span className="text-blue-600 dark:text-blue-400 select-all font-black">{qrUpiId}</span>
+                  </p>
+                  <p className="text-[8px] text-slate-500 mt-0.5">
+                    Scan QR code above with any UPI app to pay
+                  </p>
+                </div>
               </div>
 
               {/* QR Editable Inputs */}
@@ -901,13 +996,25 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
 
                 {/* QR Actions */}
                 <div className="pt-1 flex flex-wrap items-center gap-2">
-                  <a
-                    href={upiPayUri}
+                  <button
+                    type="button"
+                    onClick={handlePayViaUpi}
                     className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold flex items-center space-x-1 transition shadow-xs"
+                    title="Open Instant UPI Payment Modal"
                   >
-                    <IndianRupee className="w-3 h-3" />
+                    <Smartphone className="w-3 h-3" />
                     <span>Pay with UPI App</span>
-                  </a>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyPayLink}
+                    className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 flex items-center space-x-1"
+                    title="Copy online payment link"
+                  >
+                    {payLinkCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <ExternalLink className="w-3 h-3 text-blue-500" />}
+                    <span>{payLinkCopied ? 'Link Copied!' : 'Copy Pay Link'}</span>
+                  </button>
 
                   <button
                     type="button"
@@ -1027,6 +1134,19 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
           </div>
         </div>
       </div>
+
+      {/* Interactive UPI Payment Modal (Desktop, Tablet, Mobile) */}
+      <UpiPaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        upiId={qrUpiId}
+        payeeName={qrPayeeName}
+        amount={effectiveQrAmount}
+        note={qrNote}
+        currencySymbol={settings.currencySymbol}
+        customerName={invoiceData.customerName}
+        invoiceNumber={invoiceData.invoiceNumber}
+      />
     </div>
   );
 };

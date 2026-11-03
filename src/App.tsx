@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TiffinProvider, useTiffin } from './context/TiffinContext';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
@@ -11,6 +11,7 @@ import { AddTiffinModal } from './components/AddTiffinModal';
 import { RecordPaymentModal } from './components/RecordPaymentModal';
 import { SettingsModal } from './components/SettingsModal';
 import { BackupModal } from './components/BackupModal';
+import { UpiPaymentModal } from './components/UpiPaymentModal';
 import { Customer, TiffinBill } from './types';
 
 const MainLayout: React.FC = () => {
@@ -35,6 +36,46 @@ const MainLayout: React.FC = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
+
+  // Check for universal web payment redirect (?pay=1 or ?pa=...) from PDF or shared link
+  const [payUrlParams, setPayUrlParams] = useState<{
+    isOpen: boolean;
+    upiId: string;
+    payeeName: string;
+    amount: number;
+    note: string;
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('pay') === '1' || urlParams.get('pa')) {
+      const upiId = urlParams.get('pa') || '7798719246@upi';
+      const payeeName = urlParams.get('pn') || 'Krish Tiffin Service';
+      const amount = parseFloat(urlParams.get('am') || '0') || 0;
+      const note = urlParams.get('tn') || 'Tiffin bill payment';
+      return {
+        isOpen: true,
+        upiId,
+        payeeName,
+        amount,
+        note,
+      };
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    // If opened via payment link from PDF on mobile, automatically trigger UPI app launch
+    if (payUrlParams?.isOpen && payUrlParams.upiId) {
+      const amtStr = payUrlParams.amount > 0 ? `&am=${payUrlParams.amount.toFixed(2)}` : '';
+      const uri = `upi://pay?pa=${encodeURIComponent(payUrlParams.upiId)}&pn=${encodeURIComponent(payUrlParams.payeeName)}${amtStr}&cu=INR&tn=${encodeURIComponent(payUrlParams.note)}`;
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        setTimeout(() => {
+          window.location.href = uri;
+        }, 300);
+      }
+    }
+  }, [payUrlParams]);
 
   // Handlers
   const handleOpenAddCustomer = () => {
@@ -167,6 +208,24 @@ const MainLayout: React.FC = () => {
         isOpen={isBackupOpen}
         onClose={() => setIsBackupOpen(false)}
       />
+
+      {payUrlParams?.isOpen && (
+        <UpiPaymentModal
+          isOpen={payUrlParams.isOpen}
+          onClose={() => {
+            setPayUrlParams(null);
+            // Clean URL query params without reloading
+            if (window.history.pushState) {
+              const cleanUrl = window.location.pathname;
+              window.history.pushState({}, '', cleanUrl);
+            }
+          }}
+          upiId={payUrlParams.upiId}
+          payeeName={payUrlParams.payeeName}
+          amount={payUrlParams.amount}
+          note={payUrlParams.note}
+        />
+      )}
     </div>
   );
 };
