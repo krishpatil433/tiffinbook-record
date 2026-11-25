@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { MealTime } from '../types';
+import { TiffinBill, MealTime } from '../types';
 import { useTiffin } from '../context/TiffinContext';
-import { getTodayString, formatCurrency } from '../utils/formatters';
+import { getTodayString, formatCurrency, buildRateSummary, billsToRateEntries } from '../utils/formatters';
 import confetti from 'canvas-confetti';
 import { 
   CalendarCheck, 
@@ -39,7 +39,7 @@ export const DailyRegister: React.FC = () => {
     return customers.filter(c => c.status === 'active');
   }, [customers]);
 
-  // Check which customers already have an entry for this date & meal
+  // Check which customers already have an entry for this date & meal, plus all meals logged on date
   const existingEntriesMap = useMemo(() => {
     const map = new Map<string, number>();
     bills.forEach(b => {
@@ -49,6 +49,18 @@ export const DailyRegister: React.FC = () => {
     });
     return map;
   }, [bills, date, mealTime]);
+
+  const dailyCustomerBillsMap = useMemo(() => {
+    const map = new Map<string, TiffinBill[]>();
+    bills.forEach(b => {
+      if (b.date === date) {
+        const list = map.get(b.customerId) || [];
+        list.push(b);
+        map.set(b.customerId, list);
+      }
+    });
+    return map;
+  }, [bills, date]);
 
   const toggleSelect = (customerId: string) => {
     setEntriesState(prev => {
@@ -83,6 +95,25 @@ export const DailyRegister: React.FC = () => {
           ...current,
           selected: true,
           quantity: newQty,
+        },
+      };
+    });
+  };
+
+  const updatePrice = (customerId: string, newPrice: number) => {
+    setEntriesState(prev => {
+      const current = prev[customerId] || {
+        selected: true,
+        quantity: 1,
+        price: customers.find(c => c.id === customerId)?.defaultPrice || settings.defaultPrice || 70,
+        note: '',
+      };
+      return {
+        ...prev,
+        [customerId]: {
+          ...current,
+          selected: true,
+          price: Math.max(0, newPrice),
         },
       };
     });
@@ -259,6 +290,10 @@ export const DailyRegister: React.FC = () => {
             note: '',
           };
           const alreadyLoggedCount = existingEntriesMap.get(customer.id) || 0;
+          const dayBills = dailyCustomerBillsMap.get(customer.id) || [];
+          const dayRateSummary = dayBills.length > 0
+            ? buildRateSummary(billsToRateEntries(dayBills), settings.currencySymbol)
+            : null;
           const isSelected = entry.selected;
 
           return (
@@ -311,35 +346,67 @@ export const DailyRegister: React.FC = () => {
                     ✓ {alreadyLoggedCount} logged for {mealTime} today
                   </div>
                 )}
+
+                {dayRateSummary && dayRateSummary.totalQuantity > 0 && (
+                  <div
+                    className="mt-1.5 text-[10px] font-mono font-semibold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/70 px-2 py-1 rounded border border-slate-200 dark:border-slate-700/80"
+                    title={dayRateSummary.tooltipText}
+                  >
+                    Day ({dayRateSummary.totalQuantity}): {dayRateSummary.compactDisplay} ={' '}
+                    <span className="text-slate-900 dark:text-white font-bold">
+                      {formatCurrency(dayRateSummary.totalAmount, settings.currencySymbol)}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Quantity Stepper (if selected) */}
+              {/* Quantity Stepper & Rate (if selected) */}
               {isSelected && (
                 <div
-                  className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-900/40 flex items-center justify-between"
+                  className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-900/40 space-y-2"
                   onClick={e => e.stopPropagation()}
                 >
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    Tiffins:
-                  </span>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(customer.id, -1)}
-                      className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 flex items-center justify-center font-bold text-xs hover:bg-blue-200"
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="w-6 text-center font-black text-sm text-slate-900 dark:text-white font-mono">
-                      {entry.quantity}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Tiffins:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => updateQuantity(customer.id, 1)}
-                      className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 flex items-center justify-center font-bold text-xs hover:bg-blue-200"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(customer.id, -1)}
+                        className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 flex items-center justify-center font-bold text-xs hover:bg-blue-200"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="w-6 text-center font-black text-sm text-slate-900 dark:text-white font-mono">
+                        {entry.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(customer.id, 1)}
+                        className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 flex items-center justify-center font-bold text-xs hover:bg-blue-200"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300">
+                      Rate ({settings.currencySymbol}):
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={entry.price}
+                        onChange={e => updatePrice(customer.id, parseFloat(e.target.value) || 0)}
+                        className="w-20 px-2 py-1 bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-md text-right font-mono font-bold text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <span className="font-mono font-bold text-blue-700 dark:text-blue-300">
+                        = {formatCurrency(entry.quantity * entry.price, settings.currencySymbol)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

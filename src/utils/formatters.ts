@@ -65,6 +65,128 @@ export const generateId = (prefix: string = 'id'): string => {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 };
 
+export interface RateBreakdownEntry {
+  id?: string;
+  mealTime?: string;
+  quantity: number;
+  rate: number | null;
+  total?: number;
+}
+
+export interface RateGroup {
+  rate: number | null;
+  quantity: number;
+}
+
+export interface RateSummaryResult {
+  totalQuantity: number;
+  totalAmount: number;
+  rateDisplay: string;
+  compactDisplay: string;
+  tooltipText: string;
+  hasMultipleRates: boolean;
+  singleRate: number | null;
+  groupedRates: RateGroup[];
+}
+
+export const billsToRateEntries = (bills: TiffinBill[]): RateBreakdownEntry[] => {
+  return bills.map(b => ({
+    id: b.id,
+    mealTime: b.mealTime,
+    quantity: Number(b.quantity) || 0,
+    rate: b.price !== undefined && b.price !== null && !Number.isNaN(Number(b.price))
+      ? Number(b.price)
+      : null,
+    total: Number(b.total) || 0,
+  }));
+};
+
+export const buildRateSummary = (
+  items: RateBreakdownEntry[],
+  currencySymbol: string = '₹'
+): RateSummaryResult => {
+  if (!items || items.length === 0) {
+    return {
+      totalQuantity: 0,
+      totalAmount: 0,
+      rateDisplay: '—',
+      compactDisplay: '—',
+      tooltipText: '',
+      hasMultipleRates: false,
+      singleRate: null,
+      groupedRates: [],
+    };
+  }
+
+  let totalQuantity = 0;
+  let totalAmount = 0;
+  const groupMap = new Map<string, RateGroup>();
+  const tooltipParts: string[] = [];
+
+  items.forEach(item => {
+    const qty = Number(item.quantity);
+    const safeQty = !Number.isNaN(qty) && qty >= 0 ? qty : 0;
+    const hasValidRate =
+      item.rate !== null &&
+      item.rate !== undefined &&
+      !Number.isNaN(Number(item.rate));
+    const safeRate = hasValidRate ? Number(item.rate) : null;
+    const itemAmount =
+      safeRate !== null
+        ? parseFloat((safeQty * safeRate).toFixed(2))
+        : Number(item.total) || 0;
+
+    totalQuantity += safeQty;
+    totalAmount += itemAmount;
+
+    const key = safeRate !== null ? String(safeRate) : '__MISSING__';
+    const existing = groupMap.get(key);
+    if (existing) {
+      existing.quantity += safeQty;
+    } else {
+      groupMap.set(key, { rate: safeRate, quantity: safeQty });
+    }
+
+    const rateLabel =
+      safeRate !== null ? formatCurrency(safeRate, currencySymbol) : 'N/A';
+    const mealLabel = item.mealTime ? ` ${item.mealTime}` : '';
+    tooltipParts.push(`${safeQty}${mealLabel} (${rateLabel})`);
+  });
+
+  const groupedRates = Array.from(groupMap.values());
+  const formatGroupPart = (g: RateGroup): string => {
+    const rateLabel =
+      g.rate !== null ? formatCurrency(g.rate, currencySymbol) : 'N/A';
+    return g.quantity > 1 ? `${rateLabel} × ${g.quantity}` : rateLabel;
+  };
+
+  const parts = groupedRates.map(formatGroupPart);
+  const rateDisplay = parts.join(' + ');
+  const compactDisplay =
+    parts.length > 3
+      ? `${parts.slice(0, 2).join(' + ')} + … (+${parts.length - 2} more)`
+      : rateDisplay;
+
+  const hasMultipleRates =
+    groupedRates.length > 1 ||
+    (groupedRates.length === 1 && groupedRates[0].rate === null);
+  const singleRate =
+    groupedRates.length === 1 && groupedRates[0].rate !== null
+      ? groupedRates[0].rate
+      : null;
+
+  return {
+    totalQuantity,
+    totalAmount: parseFloat(totalAmount.toFixed(2)),
+    rateDisplay,
+    compactDisplay,
+    tooltipText: tooltipParts.join(', '),
+    hasMultipleRates,
+    singleRate,
+    groupedRates,
+  };
+};
+
 export const generateWhatsAppBillText = (
   customer: Customer,
   bills: TiffinBill[],
@@ -79,7 +201,14 @@ export const generateWhatsAppBillText = (
     totalPaid?: number;
     grandTotal?: number;
     upiId?: string;
-    items?: Array<{ date: string; description: string; quantity: number; rate: number; total: number }>;
+    items?: Array<{
+      date: string;
+      description: string;
+      quantity: number;
+      rate?: number;
+      rateDisplay?: string;
+      total: number;
+    }>;
   }
 ): string => {
   const customerBills = bills.filter(b => b.customerId === customer.id);
@@ -131,7 +260,16 @@ export const generateWhatsAppBillText = (
     message += `📝 *Tiffin Records / Line Items:*\n`;
     const recent = extraDetails.items.slice(-15);
     recent.forEach((item) => {
-      message += `• ${item.date} (${item.description}): ${item.quantity} × ${settings.currencySymbol}${item.rate} = *${settings.currencySymbol}${item.total}*\n`;
+      if (item.rateDisplay) {
+        message += `• ${item.date} (${item.description}): ${item.rateDisplay} = *${settings.currencySymbol}${item.total}*\n`;
+      } else if (item.rate !== undefined && !Number.isNaN(Number(item.rate))) {
+        const rateStr = item.quantity > 1
+          ? `${settings.currencySymbol}${item.rate} × ${item.quantity}`
+          : `${settings.currencySymbol}${item.rate}`;
+        message += `• ${item.date} (${item.description}): ${rateStr} = *${settings.currencySymbol}${item.total}*\n`;
+      } else {
+        message += `• ${item.date} (${item.description}): ${item.quantity} meals = *${settings.currencySymbol}${item.total}*\n`;
+      }
     });
     if (extraDetails.items.length > 15) {
       message += `...and ${extraDetails.items.length - 15} earlier entries.\n`;
@@ -143,7 +281,11 @@ export const generateWhatsAppBillText = (
     const recent = sorted.slice(-10);
     recent.forEach((b) => {
       const { formatted } = formatDayAndDate(b.date);
-      message += `• ${formatted} (${b.mealTime}): ${b.quantity} × ${settings.currencySymbol}${b.price} = *${settings.currencySymbol}${b.total}* ${b.paidStatus ? '✅ Paid' : '⏳ Due'}\n`;
+      const hasRate = b.price !== undefined && b.price !== null && !Number.isNaN(Number(b.price));
+      const ratePart = hasRate
+        ? (b.quantity > 1 ? `${settings.currencySymbol}${b.price} × ${b.quantity}` : `${settings.currencySymbol}${b.price}`)
+        : `${b.quantity} meal${b.quantity === 1 ? '' : 's'}`;
+      message += `• ${formatted} (${b.mealTime}): ${ratePart} = *${settings.currencySymbol}${b.total}* ${b.paidStatus ? '✅ Paid' : '⏳ Due'}\n`;
     });
     if (customerBills.length > 10) {
       message += `...and ${customerBills.length - 10} earlier entries.\n`;

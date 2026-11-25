@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Customer } from '../types';
 import { useTiffin } from '../context/TiffinContext';
-import { getTodayString, formatCurrency } from '../utils/formatters';
+import { getTodayString, formatCurrency, buildRateSummary, billsToRateEntries } from '../utils/formatters';
 import confetti from 'canvas-confetti';
 import { X, CreditCard, IndianRupee, Calendar, CheckCircle2, QrCode } from 'lucide-react';
 
@@ -16,7 +16,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   onClose,
   customer,
 }) => {
-  const { customers, recordPayment, getCustomerSummary, settings } = useTiffin();
+  const { customers, bills, recordPayment, getCustomerSummary, settings } = useTiffin();
 
   const [selectedCustId, setSelectedCustId] = useState<string>('');
   const [amount, setAmount] = useState<number>(0);
@@ -29,6 +29,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const targetCust = customers.find(c => c.id === (customer ? customer.id : selectedCustId));
   const summary = targetCust ? getCustomerSummary(targetCust.id) : null;
   const currentDue = summary?.dueAmount || 0;
+
+  const unpaidRateSummary = useMemo(() => {
+    if (!targetCust) return null;
+    const custBills = bills.filter(b => b.customerId === targetCust.id);
+    const unpaid = custBills.filter(b => !b.paidStatus);
+    const source = unpaid.length > 0 ? unpaid : custBills;
+    if (source.length === 0) return null;
+    return buildRateSummary(billsToRateEntries(source), settings.currencySymbol);
+  }, [bills, targetCust, settings.currencySymbol]);
 
   useEffect(() => {
     if (customer) {
@@ -119,16 +128,24 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
         {/* Due Balance Card */}
         {targetCust && (
-          <div className="bg-slate-50 dark:bg-slate-800/80 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <div>
+          <div className="bg-slate-50 dark:bg-slate-800/80 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                 Current Pending Due
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 {targetCust.name} • {targetCust.number}
               </p>
+              {unpaidRateSummary && unpaidRateSummary.totalQuantity > 0 && (
+                <p
+                  className="text-[11px] font-mono text-slate-600 dark:text-slate-300 mt-0.5 truncate"
+                  title={unpaidRateSummary.tooltipText}
+                >
+                  {unpaidRateSummary.totalQuantity} meals: {unpaidRateSummary.compactDisplay}
+                </p>
+              )}
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="text-xl font-bold text-red-600 dark:text-red-500 font-mono">
                 {formatCurrency(currentDue, settings.currencySymbol)}
               </span>

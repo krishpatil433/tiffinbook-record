@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { MealTime } from '../types';
+import { TiffinBill, MealTime } from '../types';
 import { useTiffin } from '../context/TiffinContext';
 import { 
   formatCurrency, 
   formatDate, 
   formatDayAndDate, 
   getTodayString, 
-  exportToCSV 
+  exportToCSV,
+  buildRateSummary,
+  billsToRateEntries
 } from '../utils/formatters';
 import { 
   BarChart3, 
@@ -18,7 +20,8 @@ import {
   AlertCircle, 
   PieChart, 
   Users, 
-  ChevronDown 
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export const MonthlySummary: React.FC = () => {
@@ -28,6 +31,7 @@ export const MonthlySummary: React.FC = () => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [expandedRateKeys, setExpandedRateKeys] = useState<Record<string, boolean>>({});
 
   // Unique list of available months
   const availableMonths = useMemo(() => {
@@ -70,17 +74,18 @@ export const MonthlySummary: React.FC = () => {
 
   // Meal breakdown
   const mealBreakdown = useMemo(() => {
-    const map: Record<MealTime, { count: number; amount: number }> = {
-      Breakfast: { count: 0, amount: 0 },
-      Lunch: { count: 0, amount: 0 },
-      Dinner: { count: 0, amount: 0 },
-      'Evening Snacks': { count: 0, amount: 0 },
+    const map: Record<MealTime, { count: number; amount: number; bills: TiffinBill[] }> = {
+      Breakfast: { count: 0, amount: 0, bills: [] },
+      Lunch: { count: 0, amount: 0, bills: [] },
+      Dinner: { count: 0, amount: 0, bills: [] },
+      'Evening Snacks': { count: 0, amount: 0, bills: [] },
     };
 
     monthBills.forEach(b => {
       if (map[b.mealTime]) {
         map[b.mealTime].count += b.quantity;
         map[b.mealTime].amount += b.total;
+        map[b.mealTime].bills.push(b);
       }
     });
 
@@ -109,6 +114,7 @@ export const MonthlySummary: React.FC = () => {
       const totalTiffins = dayBills.reduce((s, b) => s + b.quantity, 0);
       const billedAmount = dayBills.reduce((s, b) => s + b.total, 0);
       const collectedAmount = dayPayments.reduce((s, p) => s + p.amount, 0);
+      const rateSummary = buildRateSummary(billsToRateEntries(dayBills), settings.currencySymbol);
 
       // Only show days that have past or have data, or all
       daysList.push({
@@ -121,11 +127,12 @@ export const MonthlySummary: React.FC = () => {
         totalTiffins,
         billedAmount,
         collectedAmount,
+        rateSummary,
       });
     }
 
     return daysList;
-  }, [selectedMonth, monthBills, monthPayments]);
+  }, [selectedMonth, monthBills, monthPayments, settings.currencySymbol]);
 
   // Max tiffins in a day for chart scaling
   const maxDayTiffins = useMemo(() => {
@@ -135,7 +142,7 @@ export const MonthlySummary: React.FC = () => {
 
   // Top customers for this month
   const customerRankings = useMemo(() => {
-    const map = new Map<string, { customerId: string; name: string; number: string; tiffins: number; billed: number; paid: number }>();
+    const map = new Map<string, { customerId: string; name: string; number: string; tiffins: number; billed: number; paid: number; bills: TiffinBill[] }>();
 
     customers.forEach(c => {
       map.set(c.id, {
@@ -145,6 +152,7 @@ export const MonthlySummary: React.FC = () => {
         tiffins: 0,
         billed: 0,
         paid: 0,
+        bills: [],
       });
     });
 
@@ -153,6 +161,7 @@ export const MonthlySummary: React.FC = () => {
       if (item) {
         item.tiffins += b.quantity;
         item.billed += b.total;
+        item.bills.push(b);
       }
     });
 
@@ -165,11 +174,15 @@ export const MonthlySummary: React.FC = () => {
 
     return Array.from(map.values())
       .filter(item => item.tiffins > 0 || item.paid > 0)
+      .map(item => ({
+        ...item,
+        rateSummary: buildRateSummary(billsToRateEntries(item.bills), settings.currencySymbol),
+      }))
       .sort((a, b) => b.tiffins - a.tiffins);
-  }, [customers, monthBills, monthPayments]);
+  }, [customers, monthBills, monthPayments, settings.currencySymbol]);
 
   const handleExportCSV = () => {
-    const headers = ['Date', 'Day', 'Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Total Tiffins', 'Billed Amount (₹)', 'Collected Amount (₹)'];
+    const headers = ['Date', 'Day', 'Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Total Tiffins', 'Rates Breakdown', 'Billed Amount (₹)', 'Collected Amount (₹)'];
     const rows = dailyData
       .filter(d => d.totalTiffins > 0 || d.collectedAmount > 0)
       .map(d => {
@@ -182,6 +195,7 @@ export const MonthlySummary: React.FC = () => {
           d.dinner,
           d.snacks,
           d.totalTiffins,
+          d.rateSummary.rateDisplay,
           d.billedAmount,
           d.collectedAmount,
         ];
@@ -311,9 +325,12 @@ export const MonthlySummary: React.FC = () => {
                   className="flex-1 flex flex-col items-center group relative cursor-pointer min-w-[20px]"
                 >
                   {/* Tooltip on hover */}
-                  <div className="absolute -top-16 opacity-0 group-hover:opacity-100 transition pointer-events-none bg-slate-900 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shadow-xl z-20 whitespace-nowrap border border-slate-700">
+                  <div className="absolute -top-20 opacity-0 group-hover:opacity-100 transition pointer-events-none bg-slate-900 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shadow-xl z-20 whitespace-nowrap border border-slate-700">
                     <p className="font-bold">{d.date}</p>
                     <p className="text-blue-300">{d.totalTiffins} Tiffins ({formatCurrency(d.billedAmount, settings.currencySymbol)})</p>
+                    {d.totalTiffins > 0 && (
+                      <p className="text-slate-300 font-mono text-[10px]">{d.rateSummary.compactDisplay}</p>
+                    )}
                     {d.collectedAmount > 0 && (
                       <p className="text-emerald-300">Paid: {formatCurrency(d.collectedAmount, settings.currencySymbol)}</p>
                     )}
@@ -359,6 +376,7 @@ export const MonthlySummary: React.FC = () => {
             {(['Lunch', 'Dinner', 'Breakfast', 'Evening Snacks'] as MealTime[]).map(meal => {
               const data = mealBreakdown[meal];
               const pct = totalTiffinsMonth > 0 ? Math.round((data.count / totalTiffinsMonth) * 100) : 0;
+              const mealRateSummary = buildRateSummary(billsToRateEntries(data.bills), settings.currencySymbol);
 
               return (
                 <div key={meal} className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg border border-slate-100 dark:border-slate-800 space-y-1.5">
@@ -378,8 +396,13 @@ export const MonthlySummary: React.FC = () => {
                       className="bg-blue-600 h-full rounded-full transition-all"
                     />
                   </div>
-                  <div className="text-[11px] text-slate-500 text-right font-mono font-semibold">
-                    {formatCurrency(data.amount, settings.currencySymbol)}
+                  <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                    <span className="text-slate-500 dark:text-slate-400 truncate" title={mealRateSummary.tooltipText}>
+                      {data.count > 0 ? mealRateSummary.compactDisplay : '—'}
+                    </span>
+                    <span className="text-slate-700 dark:text-slate-200 font-semibold shrink-0">
+                      {formatCurrency(data.amount, settings.currencySymbol)}
+                    </span>
                   </div>
                 </div>
               );
@@ -403,6 +426,7 @@ export const MonthlySummary: React.FC = () => {
                   <tr className="border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     <th className="py-2.5 px-3">Customer</th>
                     <th className="py-2.5 px-3 text-center">Tiffins</th>
+                    <th className="py-2.5 px-3 text-right">Rates</th>
                     <th className="py-2.5 px-3 text-right">Billed</th>
                     <th className="py-2.5 px-3 text-right">Paid</th>
                     <th className="py-2.5 px-3 text-right">Balance</th>
@@ -411,6 +435,9 @@ export const MonthlySummary: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {customerRankings.map(c => {
                     const balance = c.billed - c.paid;
+                    const rateKey = `cust-${c.customerId}`;
+                    const hasMany = c.rateSummary.groupedRates.length > 3;
+                    const isExpanded = !!expandedRateKeys[rateKey];
                     return (
                       <tr key={c.customerId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
@@ -419,6 +446,34 @@ export const MonthlySummary: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3 text-center font-bold text-slate-900 dark:text-white font-mono">
                           {c.tiffins}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-700 dark:text-slate-300" title={c.rateSummary.tooltipText}>
+                          <div>
+                            {c.tiffins === 0
+                              ? '—'
+                              : hasMany && !isExpanded
+                              ? c.rateSummary.compactDisplay
+                              : c.rateSummary.rateDisplay}
+                          </div>
+                          {hasMany && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedRateKeys(prev => ({ ...prev, [rateKey]: !prev[rateKey] }))}
+                              className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-sans inline-flex items-center"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronUp className="w-3 h-3" />
+                                  <span>Less</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3 h-3" />
+                                  <span>All ({c.rateSummary.groupedRates.length})</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                         </td>
                         <td className="py-2.5 px-3 text-right font-medium text-slate-700 dark:text-slate-300 font-mono">
                           {formatCurrency(c.billed, settings.currencySymbol)}
@@ -457,6 +512,7 @@ export const MonthlySummary: React.FC = () => {
                 <th className="py-3 px-4 text-center">Dinner</th>
                 <th className="py-3 px-4 text-center">Snacks</th>
                 <th className="py-3 px-4 text-center font-bold">Total Tiffins</th>
+                <th className="py-3 px-4 text-right">Rates</th>
                 <th className="py-3 px-4 text-right">Billed (₹)</th>
                 <th className="py-3 px-4 text-right">Collected (₹)</th>
               </tr>
@@ -466,6 +522,9 @@ export const MonthlySummary: React.FC = () => {
                 .filter(d => d.totalTiffins > 0 || d.collectedAmount > 0)
                 .map(d => {
                   const { day, date } = formatDayAndDate(d.date);
+                  const dayKey = `day-${d.date}`;
+                  const hasMany = d.rateSummary.groupedRates.length > 3;
+                  const isExpanded = !!expandedRateKeys[dayKey];
                   return (
                     <tr key={d.date} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                       <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white font-sans">
@@ -485,6 +544,24 @@ export const MonthlySummary: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-4 text-center font-bold text-blue-600 dark:text-blue-400">
                         {d.totalTiffins}
+                      </td>
+                      <td className="py-2.5 px-4 text-right text-[11px] text-slate-700 dark:text-slate-300" title={d.rateSummary.tooltipText}>
+                        <div>
+                          {d.totalTiffins === 0
+                            ? '—'
+                            : hasMany && !isExpanded
+                            ? d.rateSummary.compactDisplay
+                            : d.rateSummary.rateDisplay}
+                        </div>
+                        {hasMany && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedRateKeys(prev => ({ ...prev, [dayKey]: !prev[dayKey] }))}
+                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-sans"
+                          >
+                            {isExpanded ? 'Less' : `All (${d.rateSummary.groupedRates.length})`}
+                          </button>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-right font-semibold text-slate-900 dark:text-white">
                         {formatCurrency(d.billedAmount, settings.currencySymbol)}

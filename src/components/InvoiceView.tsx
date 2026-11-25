@@ -9,7 +9,10 @@ import {
   getTodayString, 
   generateWhatsAppBillText, 
   openWhatsApp, 
-  exportToCSV 
+  exportToCSV,
+  buildRateSummary,
+  billsToRateEntries,
+  RateBreakdownEntry
 } from '../utils/formatters';
 import { 
   Printer, 
@@ -34,7 +37,9 @@ import {
   FileSpreadsheet,
   HelpCircle,
   Eye,
-  Settings2
+  Settings2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface InvoiceViewProps {
@@ -47,6 +52,8 @@ export interface InvoiceRowItem {
   description: string;
   quantity: number;
   rate: number;
+  rateDisplay: string;
+  rateItems: RateBreakdownEntry[];
   total: number;
   status: 'PAID' | 'DUE' | 'CUSTOM';
 }
@@ -66,6 +73,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
   const [isEditMode, setIsEditMode] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [qrCopied, setQrCopied] = useState<boolean>(false);
+  const [editingRatesRowId, setEditingRatesRowId] = useState<string | null>(null);
+  const [expandedRateRows, setExpandedRateRows] = useState<Record<string, boolean>>({});
 
   const customer = customers.find(c => c.id === selectedCustId);
 
@@ -138,14 +147,17 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
     return Array.from(map.values())
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((group, idx) => {
-        const avgRate = group.totalQuantity > 0 ? group.totalAmount / group.totalQuantity : customer.defaultPrice || 70;
+        const rateEntries = billsToRateEntries(group.items);
+        const rateSummary = buildRateSummary(rateEntries, settings.currencySymbol);
         return {
           id: `row-${idx}-${group.date}`,
           date: group.date,
           description: group.meals.join(', ') || 'Tiffin Delivery',
-          quantity: group.totalQuantity,
-          rate: avgRate,
-          total: group.totalAmount,
+          quantity: rateSummary.totalQuantity,
+          rate: rateSummary.singleRate ?? 0,
+          rateDisplay: rateSummary.rateDisplay,
+          rateItems: rateEntries,
+          total: rateSummary.totalAmount,
           status: 'DUE',
         };
       });
@@ -249,11 +261,18 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
       const updatedRows = prev.rows.map(r => {
         if (r.id === id) {
           const updated = { ...r, [field]: value };
-          // Auto update total if quantity or rate changed
+          // Auto update rateItems, rateDisplay, and total if quantity or rate changed on a single-rate row
           if (field === 'quantity' || field === 'rate') {
             const qty = field === 'quantity' ? Number(value) || 0 : r.quantity;
             const rate = field === 'rate' ? Number(value) || 0 : r.rate;
-            updated.total = parseFloat((qty * rate).toFixed(2));
+            const mealLabel = r.rateItems?.[0]?.mealTime || r.description || 'Meal';
+            const updatedItems: RateBreakdownEntry[] = [
+              { id: r.rateItems?.[0]?.id, mealTime: mealLabel, quantity: qty, rate },
+            ];
+            const summary = buildRateSummary(updatedItems, settings.currencySymbol);
+            updated.rateItems = updatedItems;
+            updated.rateDisplay = summary.rateDisplay;
+            updated.total = summary.totalAmount;
           }
           return updated;
         }
@@ -263,15 +282,110 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
     });
   };
 
+  const handleUpdateRateItem = (
+    rowId: string,
+    itemIdx: number,
+    field: 'mealTime' | 'quantity' | 'rate',
+    value: string | number
+  ) => {
+    setInvoiceData(prev => {
+      const updatedRows = prev.rows.map(r => {
+        if (r.id !== rowId) return r;
+        const nextItems = (r.rateItems || []).map((item, idx) => {
+          if (idx !== itemIdx) return item;
+          if (field === 'mealTime') {
+            return { ...item, mealTime: String(value) };
+          }
+          if (field === 'quantity') {
+            return { ...item, quantity: Math.max(0, Number(value) || 0) };
+          }
+          return { ...item, rate: Math.max(0, Number(value) || 0) };
+        });
+        const summary = buildRateSummary(nextItems, settings.currencySymbol);
+        const desc = nextItems
+          .map(it => `${it.quantity} ${it.mealTime || 'Meal'}`.trim())
+          .join(', ');
+        return {
+          ...r,
+          description: desc || r.description,
+          quantity: summary.totalQuantity,
+          rate: summary.singleRate ?? 0,
+          rateDisplay: summary.rateDisplay,
+          rateItems: nextItems,
+          total: summary.totalAmount,
+        };
+      });
+      return { ...prev, rows: updatedRows };
+    });
+  };
+
+  const handleAddRateItem = (rowId: string) => {
+    const defaultRate = customer?.defaultPrice || settings.defaultPrice || 70;
+    setInvoiceData(prev => {
+      const updatedRows = prev.rows.map(r => {
+        if (r.id !== rowId) return r;
+        const nextItems: RateBreakdownEntry[] = [
+          ...(r.rateItems || []),
+          { mealTime: 'Extra', quantity: 1, rate: defaultRate },
+        ];
+        const summary = buildRateSummary(nextItems, settings.currencySymbol);
+        const desc = nextItems
+          .map(it => `${it.quantity} ${it.mealTime || 'Meal'}`.trim())
+          .join(', ');
+        return {
+          ...r,
+          description: desc || r.description,
+          quantity: summary.totalQuantity,
+          rate: summary.singleRate ?? 0,
+          rateDisplay: summary.rateDisplay,
+          rateItems: nextItems,
+          total: summary.totalAmount,
+        };
+      });
+      return { ...prev, rows: updatedRows };
+    });
+  };
+
+  const handleDeleteRateItem = (rowId: string, itemIdx: number) => {
+    setInvoiceData(prev => {
+      const updatedRows = prev.rows.map(r => {
+        if (r.id !== rowId) return r;
+        if ((r.rateItems || []).length <= 1) return r;
+        const nextItems = r.rateItems.filter((_, idx) => idx !== itemIdx);
+        const summary = buildRateSummary(nextItems, settings.currencySymbol);
+        const desc = nextItems
+          .map(it => `${it.quantity} ${it.mealTime || 'Meal'}`.trim())
+          .join(', ');
+        return {
+          ...r,
+          description: desc || r.description,
+          quantity: summary.totalQuantity,
+          rate: summary.singleRate ?? 0,
+          rateDisplay: summary.rateDisplay,
+          rateItems: nextItems,
+          total: summary.totalAmount,
+        };
+      });
+      return { ...prev, rows: updatedRows };
+    });
+  };
+
   const handleAddRow = () => {
     const newId = `custom-row-${Date.now()}`;
+    const defaultRate = customer?.defaultPrice || settings.defaultPrice || 70;
+    const rateItems: RateBreakdownEntry[] = [
+      { mealTime: 'Extra Tiffin', quantity: 1, rate: defaultRate },
+    ];
+    const summary = buildRateSummary(rateItems, settings.currencySymbol);
     const newRow: InvoiceRowItem = {
       id: newId,
       date: getTodayString(),
       description: 'Extra Tiffin / Special Thali',
       quantity: 1,
-      rate: customer?.defaultPrice || settings.defaultPrice || 70,
-      total: customer?.defaultPrice || settings.defaultPrice || 70,
+      rate: defaultRate,
+      rateDisplay: summary.rateDisplay,
+      rateItems,
+      total: defaultRate,
       status: 'CUSTOM',
     };
     setInvoiceData(prev => ({
@@ -309,7 +423,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
       date: r.date,
       description: r.description,
       quantity: r.quantity,
-      rate: r.rate,
+      rate: r.rateItems.length <= 1 ? r.rate : undefined,
+      rateDisplay: r.rateDisplay,
       total: r.total,
     }));
 
@@ -338,7 +453,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
       date: r.date,
       description: r.description,
       quantity: r.quantity,
-      rate: r.rate,
+      rate: r.rateItems.length <= 1 ? r.rate : undefined,
+      rateDisplay: r.rateDisplay,
       total: r.total,
     }));
 
@@ -380,7 +496,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
       r.date,
       r.description,
       r.quantity,
-      r.rate,
+      r.rateDisplay,
       r.total,
     ]);
     // Add summary rows
@@ -671,7 +787,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                 <th className="py-2.5 px-3 border border-slate-300 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 text-center w-16">
                   Qty
                 </th>
-                <th className="py-2.5 px-3 border border-slate-300 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 text-right w-24">
+                <th className="py-2.5 px-3 border border-slate-300 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 text-right w-40 sm:w-48">
                   Rate ({settings.currencySymbol})
                 </th>
                 <th className="py-2.5 px-3 border border-slate-300 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 text-right w-28">
@@ -692,81 +808,259 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialCustomerId }) =
                   </td>
                 </tr>
               ) : (
-                invoiceData.rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    {/* Date */}
-                    <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 font-mono">
-                      <input
-                        type="text"
-                        value={row.date}
-                        onChange={e => handleUpdateRow(row.id, 'date', e.target.value)}
-                        placeholder="YYYY-MM-DD"
-                        className="w-full bg-transparent text-xs focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
-                      />
-                    </td>
+                invoiceData.rows.map((row) => {
+                  const rowRateSummary = buildRateSummary(row.rateItems || [], settings.currencySymbol);
+                  const isMultiRate = rowRateSummary.hasMultipleRates;
+                  const isEditingRates = editingRatesRowId === row.id;
+                  const hasManyRates = rowRateSummary.groupedRates.length > 3;
+                  const isExpanded = !!expandedRateRows[row.id];
 
-                    {/* Meal / Description */}
-                    <td className="py-2 px-2 border border-slate-300 dark:border-slate-700">
-                      <input
-                        type="text"
-                        value={row.description}
-                        onChange={e => handleUpdateRow(row.id, 'description', e.target.value)}
-                        placeholder="Meal description (e.g. Lunch, Special Thali)"
-                        className="w-full bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded font-medium"
-                      />
-                    </td>
-
-                    {/* Quantity */}
-                    <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-center">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={row.quantity}
-                        onChange={e => handleUpdateRow(row.id, 'quantity', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-center text-xs font-bold text-slate-900 dark:text-white font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
-                      />
-                    </td>
-
-                    {/* Rate (per item) - ANY NUMBER ALLOWED */}
-                    <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={row.rate}
-                        onChange={e => handleUpdateRow(row.id, 'rate', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
-                      />
-                    </td>
-
-                    {/* Amount */}
-                    <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={row.total}
-                        onChange={e => handleUpdateRow(row.id, 'total', parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent text-right text-xs font-bold text-slate-900 dark:text-white font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
-                      />
-                    </td>
-
-                    {/* Delete button */}
-                    {isEditMode && (
-                      <td className="no-print py-2 px-2 border border-slate-300 dark:border-slate-700 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRow(row.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 rounded transition"
-                          title="Delete Row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 align-top">
+                      {/* Date */}
+                      <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 font-mono">
+                        <input
+                          type="text"
+                          value={row.date}
+                          onChange={e => handleUpdateRow(row.id, 'date', e.target.value)}
+                          placeholder="YYYY-MM-DD"
+                          readOnly={!isEditMode}
+                          className="w-full bg-transparent text-xs focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
+                        />
                       </td>
-                    )}
-                  </tr>
-                ))
+
+                      {/* Meal / Description */}
+                      <td className="py-2 px-2 border border-slate-300 dark:border-slate-700">
+                        <input
+                          type="text"
+                          value={row.description}
+                          onChange={e => handleUpdateRow(row.id, 'description', e.target.value)}
+                          placeholder="Meal description (e.g. Lunch, Special Thali)"
+                          readOnly={!isEditMode}
+                          className="w-full bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded font-medium"
+                        />
+                      </td>
+
+                      {/* Quantity */}
+                      <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-center">
+                        {isMultiRate ? (
+                          <span
+                            className="inline-block py-0.5 px-1 text-center text-xs font-bold text-slate-900 dark:text-white font-mono"
+                            title="Calculated from individual meal entries"
+                          >
+                            {row.quantity}
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={row.quantity}
+                            readOnly={!isEditMode}
+                            onChange={e => handleUpdateRow(row.id, 'quantity', parseFloat(e.target.value) || 0)}
+                            className="w-full bg-transparent text-center text-xs font-bold text-slate-900 dark:text-white font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
+                          />
+                        )}
+                      </td>
+
+                      {/* Rate (Individual Breakdown - Never Averaged) */}
+                      <td
+                        className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-right"
+                        title={rowRateSummary.tooltipText || undefined}
+                      >
+                        {!isEditMode ? (
+                          <div className="space-y-0.5">
+                            <span className="hidden print:inline font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 break-words">
+                              {row.rateDisplay || rowRateSummary.rateDisplay}
+                            </span>
+                            <span className="print:hidden font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 break-words leading-relaxed block">
+                              {hasManyRates && !isExpanded
+                                ? rowRateSummary.compactDisplay
+                                : (row.rateDisplay || rowRateSummary.rateDisplay)}
+                            </span>
+                            {hasManyRates && (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedRateRows(prev => ({ ...prev, [row.id]: !prev[row.id] }))}
+                                className="no-print text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center space-x-0.5"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <ChevronUp className="w-3 h-3" />
+                                    <span>Less</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="w-3 h-3" />
+                                    <span>All {rowRateSummary.groupedRates.length} rates</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        ) : isMultiRate ? (
+                          <div className="space-y-1.5">
+                            {/* Print & Screen Individual Rate Breakdown */}
+                            <div className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200 break-words leading-relaxed">
+                              {hasManyRates && !isExpanded && !isEditingRates ? (
+                                <>
+                                  <span className="hidden print:inline">{row.rateDisplay || rowRateSummary.rateDisplay}</span>
+                                  <span className="print:hidden">{rowRateSummary.compactDisplay}</span>
+                                </>
+                              ) : (
+                                row.rateDisplay || rowRateSummary.rateDisplay
+                              )}
+                            </div>
+
+                            <div className="no-print flex items-center justify-end gap-2">
+                              {hasManyRates && !isEditingRates && (
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedRateRows(prev => ({ ...prev, [row.id]: !prev[row.id] }))}
+                                  className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                                >
+                                  {isExpanded ? 'Hide' : 'Show all'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setEditingRatesRowId(isEditingRates ? null : row.id)}
+                                className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center space-x-0.5"
+                              >
+                                {isEditingRates ? (
+                                  <>
+                                    <ChevronUp className="w-3 h-3" />
+                                    <span>Done</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="w-3 h-3" />
+                                    <span>Edit rates</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Expandable Inline Individual Meal Rate Editor */}
+                            {isEditingRates && (
+                              <div className="no-print mt-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-left space-y-1.5">
+                                {(row.rateItems || []).map((item, idx) => (
+                                  <div key={item.id || idx} className="flex items-center gap-1 text-[11px]">
+                                    <input
+                                      type="text"
+                                      value={item.mealTime || ''}
+                                      onChange={e => handleUpdateRateItem(row.id, idx, 'mealTime', e.target.value)}
+                                      placeholder="Meal"
+                                      className="w-16 px-1 py-0.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-[11px] font-medium"
+                                    />
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={item.quantity}
+                                      onChange={e => handleUpdateRateItem(row.id, idx, 'quantity', parseFloat(e.target.value) || 0)}
+                                      title="Qty"
+                                      className="w-10 px-1 py-0.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center font-mono text-[11px]"
+                                    />
+                                    <span className="text-slate-400">×</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={item.rate ?? ''}
+                                      onChange={e => handleUpdateRateItem(row.id, idx, 'rate', parseFloat(e.target.value) || 0)}
+                                      placeholder="Rate"
+                                      className="w-14 px-1 py-0.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-right font-mono font-bold text-[11px]"
+                                    />
+                                    {(row.rateItems || []).length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteRateItem(row.id, idx)}
+                                        className="text-slate-400 hover:text-red-500 p-0.5"
+                                        title="Remove item"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddRateItem(row.id)}
+                                  className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-0.5 pt-0.5"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Add meal rate</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="print:hidden space-y-0.5">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={row.rate}
+                                onChange={e => handleUpdateRow(row.id, 'rate', parseFloat(e.target.value) || 0)}
+                                className="w-full bg-transparent text-right text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
+                              />
+                              <div className="flex items-center justify-end gap-2">
+                                {row.quantity > 1 && (
+                                  <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400">
+                                    {row.rateDisplay || rowRateSummary.rateDisplay}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleAddRateItem(row.id);
+                                    setEditingRatesRowId(row.id);
+                                  }}
+                                  className="no-print text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                                  title="Add another meal rate to this date"
+                                >
+                                  + rate
+                                </button>
+                              </div>
+                            </div>
+                            <span className="hidden print:inline font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              {row.rateDisplay || rowRateSummary.rateDisplay}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Amount */}
+                      <td className="py-2 px-2 border border-slate-300 dark:border-slate-700 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={row.total}
+                          readOnly={!isEditMode}
+                          onChange={e => handleUpdateRow(row.id, 'total', parseFloat(e.target.value) || 0)}
+                          className="w-full bg-transparent text-right text-xs font-bold text-slate-900 dark:text-white font-mono focus:outline-none focus:bg-blue-50/50 dark:focus:bg-blue-900/30 px-1 py-0.5 rounded"
+                        />
+                      </td>
+
+                      {/* Delete button */}
+                      {isEditMode && (
+                        <td className="no-print py-2 px-2 border border-slate-300 dark:border-slate-700 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(row.id)}
+                            className="text-slate-400 hover:text-red-500 p-1 rounded transition"
+                            title="Delete Row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
